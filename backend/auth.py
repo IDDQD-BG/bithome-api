@@ -108,17 +108,32 @@ def _sb_update_pro(uid):
     _sb.table('users').update({'is_pro': True}).eq('id', uid).execute()
 
 def _try_send_verification(email, token):
-    """Try to send verification email. If no email service, return the URL for manual use."""
+    """Try to send verification email via Supabase Auth."""
     verify_url = f"{BACKEND_URL}/api/auth/verify?token={token}"
     print(f"[BitHome] Verification URL for {email}: {verify_url}")
     if SUPABASE_SERVICE_KEY:
         try:
             from supabase import create_client
             admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-            admin.auth.admin.inviteUserByEmail(email, options={'redirect_to': verify_url})
+            rand_pw = secrets.token_urlsafe(16) + "Aa1!"
+            admin.auth.admin.createUser({
+                'email': email,
+                'password': rand_pw,
+                'email_confirm': False,
+                'user_metadata': {'verification_token': token}
+            })
+            print(f"[BitHome] Verification email sent to {email}")
             return True, verify_url
         except Exception as e:
-            print(f"[BitHome] Email send failed: {e}")
+            err = str(e)
+            print(f"[BitHome] Email send failed: {err}")
+            if 'already exists' in err.lower():
+                print(f"[BitHome] User already exists in auth.users, trying invite instead")
+                try:
+                    admin.auth.admin.inviteUserByEmail(email, options={'redirect_to': verify_url})
+                    return True, verify_url
+                except:
+                    pass
             return False, verify_url
     return False, verify_url
 
@@ -305,6 +320,25 @@ def upgrade_pro(user_id):
             db.execute('UPDATE users SET is_pro = 1 WHERE id = ?', (user_id,))
 
     return jsonify({'message': 'PRO access activated', 'is_pro': True})
+
+@auth_bp.route('/test-email', methods=['GET'])
+def test_email():
+    """Test endpoint to check email sending."""
+    email = request.args.get('email', '')
+    if not email:
+        return jsonify({'error': 'Provide ?email=xxx'}), 400
+    try:
+        from supabase import create_client
+        admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY or SUPABASE_KEY)
+        rand_pw = secrets.token_urlsafe(16) + "Aa1!"
+        result = admin.auth.admin.createUser({
+            'email': email,
+            'password': rand_pw,
+            'email_confirm': False
+        })
+        return jsonify({'message': 'User created in auth.users', 'user_id': result.user.id, 'email_sent': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/health', methods=['GET'])
 def health():
