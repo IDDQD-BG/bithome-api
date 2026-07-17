@@ -107,35 +107,45 @@ def _sb_create_user(email, username, pw_hash, verification_token=None):
 def _sb_update_pro(uid):
     _sb.table('users').update({'is_pro': True}).eq('id', uid).execute()
 
-def _try_send_verification(email, token):
-    """Try to send verification email via Supabase Auth."""
+def _try_send_verification(email, token, supabase_key=None):
+    """Send verification email via Supabase Auth REST API."""
     verify_url = f"{BACKEND_URL}/api/auth/verify?token={token}"
     print(f"[BitHome] Verification URL for {email}: {verify_url}")
-    if SUPABASE_SERVICE_KEY:
-        try:
-            from supabase import create_client
-            admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-            rand_pw = secrets.token_urlsafe(16) + "Aa1!"
-            admin.auth.admin.createUser({
-                'email': email,
-                'password': rand_pw,
-                'email_confirm': False,
-                'user_metadata': {'verification_token': token}
-            })
-            print(f"[BitHome] Verification email sent to {email}")
+    key = supabase_key or SUPABASE_SERVICE_KEY or SUPABASE_KEY
+    if not key:
+        return False, verify_url
+    try:
+        import requests as _req
+        ref = SUPABASE_URL.replace('https://', '').split('.')[0]
+        payload = {
+            'email': email,
+            'password': secrets.token_urlsafe(16) + "Aa1!",
+            'email_confirm': False
+        }
+        headers = {
+            'apikey': key,
+            'Authorization': 'Bearer ' + key,
+            'Content-Type': 'application/json'
+        }
+        resp = _req.post(f'https://{ref}.supabase.co/auth/v1/admin/users', json=payload, headers=headers, timeout=15)
+        if resp.ok:
+            print(f"[BitHome] ✓ Verification email sent to {email}")
             return True, verify_url
-        except Exception as e:
-            err = str(e)
-            print(f"[BitHome] Email send failed: {err}")
-            if 'already exists' in err.lower():
-                print(f"[BitHome] User already exists in auth.users, trying invite instead")
+        else:
+            err = resp.json()
+            print(f"[BitHome] Email API error: {err}")
+            if 'already' in str(err).lower() or 'exists' in str(err).lower():
                 try:
-                    admin.auth.admin.inviteUserByEmail(email, options={'redirect_to': verify_url})
-                    return True, verify_url
+                    invite = _req.post(f'https://{ref}.supabase.co/auth/v1/admin/invite', json={'email': email}, headers=headers, timeout=15)
+                    if invite.ok:
+                        print(f"[BitHome] ✓ Invite email sent to {email}")
+                        return True, verify_url
                 except:
                     pass
             return False, verify_url
-    return False, verify_url
+    except Exception as e:
+        print(f"[BitHome] Email send exception: {e}")
+        return False, verify_url
 
 # ---- Endpoints ----
 
@@ -327,18 +337,8 @@ def test_email():
     email = request.args.get('email', '')
     if not email:
         return jsonify({'error': 'Provide ?email=xxx'}), 400
-    try:
-        from supabase import create_client
-        admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY or SUPABASE_KEY)
-        rand_pw = secrets.token_urlsafe(16) + "Aa1!"
-        result = admin.auth.admin.createUser({
-            'email': email,
-            'password': rand_pw,
-            'email_confirm': False
-        })
-        return jsonify({'message': 'User created in auth.users', 'user_id': result.user.id, 'email_sent': True})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    sent, url = _try_send_verification(email, 'test-token', SUPABASE_SERVICE_KEY or SUPABASE_KEY)
+    return jsonify({'sent': sent, 'url': url})
 
 @auth_bp.route('/health', methods=['GET'])
 def health():
