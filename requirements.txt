@@ -1,0 +1,4 @@
+flask>=3.0
+pyjwt>=2.0
+bcrypt>=5.0
+supabase>=2.0
