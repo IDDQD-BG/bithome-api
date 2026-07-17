@@ -108,43 +108,42 @@ def _sb_update_pro(uid):
     _sb.table('users').update({'is_pro': True}).eq('id', uid).execute()
 
 def _try_send_verification(email, token, supabase_key=None):
-    """Send verification email via Supabase Auth REST API."""
+    """Send verification email via Supabase Auth signUp."""
     verify_url = f"{BACKEND_URL}/api/auth/verify?token={token}"
     print(f"[BitHome] Verification URL for {email}: {verify_url}")
-    key = supabase_key or SUPABASE_SERVICE_KEY or SUPABASE_KEY
-    if not key:
+    if not supabase_key and not SUPABASE_KEY:
         return False, verify_url
     try:
-        import requests as _req
-        ref = SUPABASE_URL.replace('https://', '').split('.')[0]
-        payload = {
+        from supabase import create_client
+        anon = create_client(SUPABASE_URL, supabase_key or SUPABASE_KEY)
+        rand_pw = secrets.token_urlsafe(16) + "Aa1!"
+        result = anon.auth.sign_up({
             'email': email,
-            'password': secrets.token_urlsafe(16) + "Aa1!",
-            'email_confirm': False
-        }
-        headers = {
-            'apikey': key,
-            'Authorization': 'Bearer ' + key,
-            'Content-Type': 'application/json'
-        }
-        resp = _req.post(f'https://{ref}.supabase.co/auth/v1/admin/users', json=payload, headers=headers, timeout=15)
-        if resp.ok:
-            print(f"[BitHome] ✓ Verification email sent to {email}")
+            'password': rand_pw,
+            'options': {
+                'data': {'verification_token': token},
+                'redirect_to': verify_url
+            }
+        })
+        if result.user:
+            print(f"[BitHome] ✓ Auth user created, email sent to {email}")
             return True, verify_url
         else:
-            err = resp.json()
-            print(f"[BitHome] Email API error: {err}")
-            if 'already' in str(err).lower() or 'exists' in str(err).lower():
-                try:
-                    invite = _req.post(f'https://{ref}.supabase.co/auth/v1/admin/invite', json={'email': email}, headers=headers, timeout=15)
-                    if invite.ok:
-                        print(f"[BitHome] ✓ Invite email sent to {email}")
-                        return True, verify_url
-                except:
-                    pass
+            print(f"[BitHome] sign_up returned no user")
             return False, verify_url
     except Exception as e:
-        print(f"[BitHome] Email send exception: {e}")
+        err = str(e)
+        print(f"[BitHome] Email send exception: {err}")
+        if 'already' in err.lower() or 'exists' in err.lower():
+            try:
+                from supabase import create_client
+                anon = create_client(SUPABASE_URL, supabase_key or SUPABASE_KEY)
+                anon.auth.sign_in_with_password({'email': email, 'password': 'force_resend_' + token[:8]})
+                anon.auth.reset_password_for_email(email, {'redirect_to': verify_url})
+                print(f"[BitHome] ✓ Password reset email sent to {email}")
+                return True, verify_url
+            except:
+                pass
         return False, verify_url
 
 # ---- Endpoints ----
