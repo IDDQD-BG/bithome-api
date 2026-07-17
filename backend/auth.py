@@ -337,8 +337,30 @@ def test_email():
     email = request.args.get('email', '')
     if not email:
         return jsonify({'error': 'Provide ?email=xxx'}), 400
-    sent, url = _try_send_verification(email, 'test-token', SUPABASE_SERVICE_KEY or SUPABASE_KEY)
-    return jsonify({'sent': sent, 'url': url})
+    try:
+        import requests as _req
+        key = SUPABASE_SERVICE_KEY or SUPABASE_KEY
+        ref = SUPABASE_URL.replace('https://', '').split('.')[0]
+        payload = {
+            'email': email,
+            'password': secrets.token_urlsafe(16) + "Aa1!",
+            'email_confirm': False
+        }
+        headers = {
+            'apikey': key,
+            'Authorization': 'Bearer ' + key,
+            'Content-Type': 'application/json'
+        }
+        resp = _req.post(f'https://{ref}.supabase.co/auth/v1/admin/users', json=payload, headers=headers, timeout=15)
+        return jsonify({
+            'status': resp.status_code,
+            'response': resp.json() if resp.text else 'empty',
+            'key_prefix': key[:10] + '...' if key else 'NONE',
+            'ref': ref,
+            'url': SUPABASE_URL
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'type': type(e).__name__}), 500
 
 @auth_bp.route('/health', methods=['GET'])
 def health():
