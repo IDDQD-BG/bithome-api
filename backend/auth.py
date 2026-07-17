@@ -5,6 +5,7 @@ import bcrypt
 import datetime
 from functools import wraps
 from flask import Blueprint, request, jsonify, make_response
+import requests
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'bithome-dev-secret-change-in-production')
 JWT_EXPIRY_HOURS = 72
@@ -238,6 +239,32 @@ a{{color:#f7931a;text-decoration:none;font-family:'Orbitron',sans-serif;font-siz
     resp = make_response(html)
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp
+
+@auth_bp.route('/check-verification', methods=['POST'])
+def check_verification():
+    """Check if email is confirmed in Supabase Auth and update our table."""
+    data = request.get_json(force=True)
+    email = (data.get('email') or '').strip().lower()
+    if not email:
+        return jsonify({'error': 'Email required'}), 400
+    try:
+        key = SUPABASE_SERVICE_KEY or SUPABASE_KEY
+        ref = SUPABASE_URL.replace('https://', '').split('.')[0]
+        headers = {'apikey': key, 'Authorization': 'Bearer ' + key}
+        resp = requests.get(f'https://{ref}.supabase.co/auth/v1/admin/users?email={email}', headers=headers, timeout=10)
+        if not resp.ok:
+            return jsonify({'error': 'Failed to check verification', 'verified': False}), 500
+        users = resp.json().get('users', [])
+        if not users:
+            return jsonify({'error': 'User not found in Supabase Auth', 'verified': False}), 404
+        auth_user = users[0]
+        confirmed = auth_user.get('email_confirmed_at') is not None
+        if confirmed and _use_supabase:
+            _sb.table('users').update({'email_verified': True, 'verification_token': None}).eq('email', email).execute()
+            return jsonify({'verified': True, 'message': 'Email is confirmed!'})
+        return jsonify({'verified': bool(confirmed), 'message': 'Email not yet confirmed. Check your inbox and click the link.'})
+    except Exception as e:
+        return jsonify({'error': str(e), 'verified': False}), 500
 
 @auth_bp.route('/resend-verification', methods=['POST'])
 def resend_verification():
