@@ -309,8 +309,6 @@ def login():
         user = _sb_find_user_by_email(email)
         if not user or not _check_password(password, user['password_hash']):
             return jsonify({'error': 'Invalid email or password'}), 401
-        if user.get('email_verified') is False:
-            return jsonify({'error': 'Please verify your email before logging in', 'email_verified': False}), 403
         token = make_token(user['id'])
         is_verified = user.get('email_verified') is True or user.get('email_verified') is None
         return jsonify({'token': token, 'user': {'id': user['id'], 'email': user['email'], 'username': user['username'], 'is_pro': bool(user['is_pro']), 'email_verified': bool(is_verified)}})
@@ -319,8 +317,6 @@ def login():
             user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
             if not user or not _check_password(password, user['password_hash']):
                 return jsonify({'error': 'Invalid email or password'}), 401
-            if user['email_verified'] == 0:
-                return jsonify({'error': 'Please verify your email before logging in', 'email_verified': False}), 403
             token = make_token(user['id'])
             return jsonify({'token': token, 'user': {'id': user['id'], 'email': user['email'], 'username': user['username'], 'is_pro': bool(user['is_pro']), 'email_verified': True}})
 
