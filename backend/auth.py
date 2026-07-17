@@ -173,19 +173,17 @@ def register():
         user = _sb_create_user(email, username, pw_hash, verification_token)
         if not user:
             return jsonify({'error': 'Registration failed'}), 500
-        sent, verify_url = _try_send_verification(email, verification_token)
+        _try_send_verification(email, verification_token)
         token = make_token(user['id'])
-        return jsonify({'token': token, 'user': {'id': user['id'], 'email': user['email'], 'username': user['username'], 'is_pro': bool(user['is_pro']), 'email_verified': False}, 'verify_url': verify_url if not sent else None}), 201
+        return jsonify({'token': token, 'user': {'id': user['id'], 'email': user['email'], 'username': user['username'], 'is_pro': bool(user['is_pro']), 'email_verified': False}}), 201
     else:
         with _get_db() as db:
             try:
                 db.execute('INSERT INTO users (email, username, password_hash, verification_token) VALUES (?, ?, ?, ?)',
                            (email, username, pw_hash, verification_token))
                 user = db.execute('SELECT id, email, username, is_pro FROM users WHERE email = ?', (email,)).fetchone()
-                verify_url = f"{BACKEND_URL}/api/auth/verify?token={verification_token}"
-                print(f"[BitHome] Verification URL: {verify_url}")
                 token = make_token(user['id'])
-                return jsonify({'token': token, 'user': {'id': user['id'], 'email': user['email'], 'username': user['username'], 'is_pro': bool(user['is_pro']), 'email_verified': False}, 'verify_url': verify_url}), 201
+                return jsonify({'token': token, 'user': {'id': user['id'], 'email': user['email'], 'username': user['username'], 'is_pro': bool(user['is_pro']), 'email_verified': False}}), 201
             except Exception:
                 return jsonify({'error': 'Email or username already exists'}), 409
 
