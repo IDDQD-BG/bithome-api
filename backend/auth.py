@@ -189,7 +189,7 @@ def register():
             except Exception:
                 return jsonify({'error': 'Email or username already exists'}), 409
 
-PORTAL_URL = os.environ.get('PORTAL_URL', 'https://iddqd-bg.github.io/bithome-pro/')
+PORTAL_URL = os.environ.get('PORTAL_URL', 'https://bithome.pro')
 
 @auth_bp.route('/verify', methods=['GET'])
 def verify_email():
