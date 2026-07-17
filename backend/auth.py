@@ -109,7 +109,6 @@ def _sb_update_pro(uid):
     _sb.table('users').update({'is_pro': True}).eq('id', uid).execute()
 
 def _try_send_verification(email, token, supabase_key=None):
-    """Send verification email via Supabase Auth signUp."""
     verify_url = f"{BACKEND_URL}/api/auth/verify?token={token}"
     print(f"[BitHome] Verification URL for {email}: {verify_url}")
     if not supabase_key and not SUPABASE_KEY:
@@ -127,7 +126,7 @@ def _try_send_verification(email, token, supabase_key=None):
             }
         })
         if result.user:
-            print(f"[BitHome] ✓ Auth user created, email sent to {email}")
+            print(f"[BitHome] Auth user created, email sent to {email}")
             return True, verify_url
         else:
             print(f"[BitHome] sign_up returned no user")
@@ -141,7 +140,7 @@ def _try_send_verification(email, token, supabase_key=None):
                 anon = create_client(SUPABASE_URL, supabase_key or SUPABASE_KEY)
                 anon.auth.sign_in_with_password({'email': email, 'password': 'force_resend_' + token[:8]})
                 anon.auth.reset_password_for_email(email, {'redirect_to': verify_url})
-                print(f"[BitHome] ✓ Password reset email sent to {email}")
+                print(f"[BitHome] Password reset email sent to {email}")
                 return True, verify_url
             except:
                 pass
@@ -232,7 +231,7 @@ a{{color:#f7931a;text-decoration:none;font-family:'Orbitron',sans-serif;font-siz
 <div class="card"><div class="icon">{"✅" if success else "❌"}</div>
 <h2>{"VERIFIED" if success else "FAILED"}</h2>
 <p class="msg">{message}</p>
-{'<a href="' + PORTAL_URL + '">→ Go to BITHOME PORTAL</a>' if success else ''}
+{'<a href="' + PORTAL_URL + '">Go to BITHOME PORTAL</a>' if success else ''}
 </div></body></html>'''
     resp = make_response(html)
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
@@ -240,7 +239,6 @@ a{{color:#f7931a;text-decoration:none;font-family:'Orbitron',sans-serif;font-siz
 
 @auth_bp.route('/check-verification', methods=['POST'])
 def check_verification():
-    """Check if email is confirmed in Supabase Auth and update our table."""
     data = request.get_json(force=True)
     email = (data.get('email') or '').strip().lower()
     if not email:
@@ -353,7 +351,6 @@ def upgrade_pro(user_id):
 
 @auth_bp.route('/test-email', methods=['GET'])
 def test_email():
-    """Test endpoint to check email sending."""
     email = request.args.get('email', '')
     if not email:
         return jsonify({'error': 'Provide ?email=xxx'}), 400
@@ -381,6 +378,73 @@ def test_email():
         })
     except Exception as e:
         return jsonify({'error': str(e), 'type': type(e).__name__}), 500
+
+@auth_bp.route('/config', methods=['GET'])
+def auth_config():
+    return jsonify({
+        'supabaseUrl': SUPABASE_URL,
+        'version': '1.0'
+    })
+
+@auth_bp.route('/google-login', methods=['POST'])
+def google_login():
+    if not _use_supabase:
+        return jsonify({'error': 'Google login requires Supabase'}), 400
+    data = request.get_json(force=True)
+    access_token = data.get('access_token', '')
+    if not access_token:
+        return jsonify({'error': 'Access token required'}), 400
+    try:
+        key = SUPABASE_SERVICE_KEY or SUPABASE_KEY
+        ref = SUPABASE_URL.replace('https://', '').split('.')[0]
+        headers = {'apikey': key, 'Authorization': 'Bearer ' + access_token}
+        resp = requests.get(
+            f'https://{ref}.supabase.co/auth/v1/user',
+            headers=headers, timeout=10
+        )
+        if not resp.ok:
+            return jsonify({'error': 'Invalid Google token'}), 401
+        auth_user = resp.json()
+        email = (auth_user.get('email') or '').strip().lower()
+        if not email:
+            return jsonify({'error': 'Email not provided by Google'}), 400
+        existing = _sb_find_user_by_email(email)
+        if existing:
+            if not existing.get('email_verified'):
+                _sb.table('users').update({'email_verified': True}).eq('id', existing['id']).execute()
+            user = existing
+        else:
+            username_base = email.split('@')[0].replace('.', '_')[:20]
+            username = username_base
+            counter = 1
+            while _sb.table('users').select('id').eq('username', username).execute().data:
+                username = f"{username_base[:16]}_{counter}"
+                counter += 1
+            pw_hash = _hash_password(secrets.token_urlsafe(32))
+            payload = {
+                'email': email,
+                'username': username,
+                'password_hash': pw_hash,
+                'is_pro': False,
+                'email_verified': True,
+            }
+            res = _sb.table('users').insert(payload).execute()
+            if not res.data:
+                return jsonify({'error': 'Failed to create user'}), 500
+            user = res.data[0]
+        token = make_token(user['id'])
+        return jsonify({
+            'token': token,
+            'user': {
+                'id': user['id'],
+                'email': user['email'],
+                'username': user['username'],
+                'is_pro': bool(user['is_pro']),
+                'email_verified': True
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/health', methods=['GET'])
 def health():
