@@ -109,6 +109,7 @@ def _sb_update_pro(uid):
     _sb.table('users').update({'is_pro': True}).eq('id', uid).execute()
 
 def _try_send_verification(email, token, supabase_key=None):
+    """Send verification email via Supabase Auth signUp."""
     verify_url = f"{BACKEND_URL}/api/auth/verify?token={token}"
     print(f"[BitHome] Verification URL for {email}: {verify_url}")
     if not supabase_key and not SUPABASE_KEY:
@@ -126,7 +127,7 @@ def _try_send_verification(email, token, supabase_key=None):
             }
         })
         if result.user:
-            print(f"[BitHome] Auth user created, email sent to {email}")
+            print(f"[BitHome] ✓ Auth user created, email sent to {email}")
             return True, verify_url
         else:
             print(f"[BitHome] sign_up returned no user")
@@ -140,7 +141,7 @@ def _try_send_verification(email, token, supabase_key=None):
                 anon = create_client(SUPABASE_URL, supabase_key or SUPABASE_KEY)
                 anon.auth.sign_in_with_password({'email': email, 'password': 'force_resend_' + token[:8]})
                 anon.auth.reset_password_for_email(email, {'redirect_to': verify_url})
-                print(f"[BitHome] Password reset email sent to {email}")
+                print(f"[BitHome] ✓ Password reset email sent to {email}")
                 return True, verify_url
             except:
                 pass
@@ -231,7 +232,7 @@ a{{color:#f7931a;text-decoration:none;font-family:'Orbitron',sans-serif;font-siz
 <div class="card"><div class="icon">{"✅" if success else "❌"}</div>
 <h2>{"VERIFIED" if success else "FAILED"}</h2>
 <p class="msg">{message}</p>
-{'<a href="' + PORTAL_URL + '">Go to BITHOME PORTAL</a>' if success else ''}
+{'<a href="' + PORTAL_URL + '">→ Go to BITHOME PORTAL</a>' if success else ''}
 </div></body></html>'''
     resp = make_response(html)
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
@@ -239,6 +240,7 @@ a{{color:#f7931a;text-decoration:none;font-family:'Orbitron',sans-serif;font-siz
 
 @auth_bp.route('/check-verification', methods=['POST'])
 def check_verification():
+    """Check if email is confirmed in Supabase Auth and update our table."""
     data = request.get_json(force=True)
     email = (data.get('email') or '').strip().lower()
     if not email:
@@ -351,6 +353,7 @@ def upgrade_pro(user_id):
 
 @auth_bp.route('/test-email', methods=['GET'])
 def test_email():
+    """Test endpoint to check email sending."""
     email = request.args.get('email', '')
     if not email:
         return jsonify({'error': 'Provide ?email=xxx'}), 400
